@@ -63,23 +63,23 @@ jobs:
         run: |-
           docker push $GCP_REGION-docker.pkg.dev/$GCP_PROJECT_ID/$GCP_AR_REPOSITORY/$APPLICATION_NAME:$GITHUB_SHA
       
-      # - name: Deploy
-      #   env:
-      #     GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
-      #     GCP_REGION: ${{ vars.GCP_REGION }}
-      #     GCP_AR_REPOSITORY: ${{ vars.GCP_AR_REPOSITORY }}
-      #     APPLICATION_NAME: ${{ vars.APPLICATION_NAME  }}
-      #     APPLICATION_PORT: "9000"
-      #   run: |-
-      #     gcloud run deploy $APPLICATION_NAME \
-      #       --region $GCP_REGION \
-      #       --image $GCP_REGION-docker.pkg.dev/$GCP_PROJECT_ID/$GCP_AR_REPOSITORY/$APPLICATION_NAME:$GITHUB_SHA \
-      #       --platform managed \
-      #       --port $APPLICATION_PORT \
-      #       --timeout 30 \
-      #       --update-env-vars APP_NAME=$APPLICATION_NAME \
-      #       --update-env-vars APP_PORT=$APPLICATION_PORT \
-      #       --update-env-vars APP_TIMEZONE=Asia/Jakarta \
-      #       --allow-unauthenticated \
-      #       --quiet
+      - name: Deploy
+        env:
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          GCP_REGION: ${{ vars.GCP_REGION }}
+          GCP_AR_REPOSITORY: ${{ vars.GCP_AR_REPOSITORY }}
+          APPLICATION_NAME: ${{ vars.APPLICATION_NAME  }}
+          APPLICATION_PORT: "9000"
+        run: |-
+          gcloud run deploy $APPLICATION_NAME \
+            --region $GCP_REGION \
+            --image $GCP_REGION-docker.pkg.dev/$GCP_PROJECT_ID/$GCP_AR_REPOSITORY/$APPLICATION_NAME:$GITHUB_SHA \
+            --platform managed \
+            --port $APPLICATION_PORT \
+            --timeout 30 \
+            --update-env-vars APP_NAME=$APPLICATION_NAME \
+            --update-env-vars APP_PORT=$APPLICATION_PORT \
+            --update-env-vars APP_TIMEZONE=Asia/Jakarta \
+            --allow-unauthenticated \
+            --quiet
 
