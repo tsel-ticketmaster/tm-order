@@ -1,0 +1,85 @@
+name: tm-order-cicd-main
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    name: Build and Deploy
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout SCM
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21.x'
+
+      - name: Run Unit Test
+        run: |
+          make install
+          make cover
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@master
+        with:
+          projectBaseDir: .
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      
+      - id: auth
+        name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v1
+        with:
+          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+      
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v1
+
+      - name: Authorize Cloud Artifact Registry as Docker Registry
+        env:
+          GCP_REGION: ${{ vars.GCP_REGION }}
+        run: gcloud auth configure-docker $GCP_REGION-docker.pkg.dev
+
+      - name: Build Docker Image
+        env:
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          GCP_REGION: ${{ vars.GCP_REGION }}
+          GCP_AR_REPOSITORY: ${{ vars.GCP_AR_REPOSITORY }}
+          APPLICATION_NAME: ${{ vars.APPLICATION_NAME  }}
+        run: |-
+          docker build -t $GCP_REGION-docker.pkg.dev/$GCP_PROJECT_ID/$GCP_AR_REPOSITORY/$APPLICATION_NAME:$GITHUB_SHA .
+
+      - name: Push Docker Image to Registry
+        env:
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          GCP_REGION: ${{ vars.GCP_REGION }}
+          GCP_AR_REPOSITORY: ${{ vars.GCP_AR_REPOSITORY }}
+          APPLICATION_NAME: ${{ vars.APPLICATION_NAME  }}
+        run: |-
+          docker push $GCP_REGION-docker.pkg.dev/$GCP_PROJECT_ID/$GCP_AR_REPOSITORY/$APPLICATION_NAME:$GITHUB_SHA
+      
+      # - name: Deploy
+      #   env:
+      #     GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      #     GCP_REGION: ${{ vars.GCP_REGION }}
+      #     GCP_AR_REPOSITORY: ${{ vars.GCP_AR_REPOSITORY }}
+      #     APPLICATION_NAME: ${{ vars.APPLICATION_NAME  }}
+      #     APPLICATION_PORT: "9000"
+      #   run: |-
+      #     gcloud run deploy $APPLICATION_NAME \
+      #       --region $GCP_REGION \
+      #       --image $GCP_REGION-docker.pkg.dev/$GCP_PROJECT_ID/$GCP_AR_REPOSITORY/$APPLICATION_NAME:$GITHUB_SHA \
+      #       --platform managed \
+      #       --port $APPLICATION_PORT \
+      #       --timeout 30 \
+      #       --update-env-vars APP_NAME=$APPLICATION_NAME \
+      #       --update-env-vars APP_PORT=$APPLICATION_PORT \
+      #       --update-env-vars APP_TIMEZONE=Asia/Jakarta \
+      #       --allow-unauthenticated \
+      #       --quiet
+
