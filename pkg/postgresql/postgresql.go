@@ -6,7 +6,7 @@ import (
 	"log"
 	"sync"
 
-	_ "github.com/jackc/pgx/v5/stdlib"
+	_ "github.com/lib/pq"
 	"github.com/tsel-ticketmaster/tm-order/config"
 	"github.com/uptrace/opentelemetry-go-extra/otelsql"
 	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
@@ -27,7 +27,7 @@ func createConnection() *sql.DB {
 	cfg := config.Get()
 	dsn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s", cfg.Postgresql.Host, cfg.Postgresql.Port, cfg.Postgresql.User, cfg.Postgresql.Password, cfg.Postgresql.DBName, cfg.Postgresql.SSLMode)
 	conn, err := otelsql.Open(
-		"pgx",
+		"postgres",
 		dsn,
 		otelsql.WithAttributes(semconv.DBSystemPostgreSQL),
 		otelsql.WithDBName(cfg.Postgresql.DBName),

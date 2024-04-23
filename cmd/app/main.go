@@ -11,13 +11,15 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
 	"github.com/tsel-ticketmaster/tm-order/config"
-	adminapp_event "github.com/tsel-ticketmaster/tm-order/internal/module/adminapp/event"
-	adminapp_order "github.com/tsel-ticketmaster/tm-order/internal/module/adminapp/order"
-	adminapp_ticket "github.com/tsel-ticketmaster/tm-order/internal/module/adminapp/ticket"
+	customerapp_event "github.com/tsel-ticketmaster/tm-order/internal/module/customerapp/event"
+	"github.com/tsel-ticketmaster/tm-order/internal/module/customerapp/midtrans"
+	customerapp_order "github.com/tsel-ticketmaster/tm-order/internal/module/customerapp/order"
+	customerapp_ticket "github.com/tsel-ticketmaster/tm-order/internal/module/customerapp/ticket"
 	"github.com/tsel-ticketmaster/tm-order/internal/pkg/jwt"
 	internalMiddleare "github.com/tsel-ticketmaster/tm-order/internal/pkg/middleware"
 	"github.com/tsel-ticketmaster/tm-order/internal/pkg/session"
 	"github.com/tsel-ticketmaster/tm-order/pkg/applogger"
+	"github.com/tsel-ticketmaster/tm-order/pkg/gctasks"
 	"github.com/tsel-ticketmaster/tm-order/pkg/kafka"
 	"github.com/tsel-ticketmaster/tm-order/pkg/middleware"
 	"github.com/tsel-ticketmaster/tm-order/pkg/monitoring"
@@ -57,6 +59,8 @@ func main() {
 
 	validate := validator.Get()
 
+	hc := http.DefaultClient
+
 	jsonWebToken := jwt.NewJSONWebToken(c.JWT.PrivateKey, c.JWT.PublicKey)
 
 	psqldb := postgresql.GetDatabase()
@@ -71,9 +75,11 @@ func main() {
 		logger.WithContext(ctx).WithError(err).Error()
 	}
 
+	cloudTask := gctasks.NewGCTasks(logger, c.GCP.ProjectID, c.GCP.ServiceAccount)
+
 	session := session.NewRedisSessionStore(logger, rc)
 
-	adminSessionMiddleware := internalMiddleare.NewAdminSessionMiddleware(jsonWebToken, session)
+	customerSessionMiddleware := internalMiddleare.NewCustomerSessionMiddleware(jsonWebToken, session)
 
 	router := mux.NewRouter()
 	router.Use(
@@ -83,30 +89,35 @@ func main() {
 	)
 
 	// admin's app
-	adminappEventRepository := adminapp_event.NewEventRepository(logger, psqldb)
-	adminappArtistRepository := adminapp_event.NewArtistRepository(logger, psqldb)
-	adminappPromotorRepository := adminapp_event.NewPromotorRepository(logger, psqldb)
-	adminappShowRepository := adminapp_event.NewShowRepository(logger, psqldb)
-	adminappLocationRepository := adminapp_event.NewLocationRepository(logger, psqldb)
-	adminappOrderRuleRangeDateRepository := adminapp_order.NewOrderRuleRangeDateRepository(logger, psqldb)
-	adminappOrderRuleDayRepository := adminapp_order.NewOrderRuleDayRepository(logger, psqldb)
-	adminappTicketStockRepository := adminapp_ticket.NewTicketStockRepository(logger, psqldb)
-	adminappEventUseCase := adminapp_event.NewEventUseCase(adminapp_event.EventUseCaseProperty{
-		Logger:                       logger,
-		Location:                     c.Application.Timezone,
-		Timeout:                      c.Application.Timeout,
-		EventRepository:              adminappEventRepository,
-		ArtistRepository:             adminappArtistRepository,
-		PromotorRepository:           adminappPromotorRepository,
-		ShowRepository:               adminappShowRepository,
-		LocationRepository:           adminappLocationRepository,
-		OrderRuleDayRepository:       adminappOrderRuleDayRepository,
-		OrderRuleRangeDateRepository: adminappOrderRuleRangeDateRepository,
-		TicketStockRepository:        adminappTicketStockRepository,
-	})
-	adminapp_event.InitHTTPHandler(router, adminSessionMiddleware, validate, adminappEventUseCase)
 
 	// customer's app
+	customerappEventRepo := customerapp_event.NewEventRepository(logger, psqldb)
+	customerappShowRepo := customerapp_event.NewShowRepository(logger, psqldb)
+	customerappOrderRepo := customerapp_order.NewOrderRepository(logger, psqldb)
+	customerappOrderItemRepo := customerapp_order.NewItemRepository(logger, psqldb)
+	customerappOrderRuleRangeDateRepo := customerapp_order.NewOrderRuleRangeDateRepository(logger, psqldb)
+	customerappOrderRuleDayRepo := customerapp_order.NewOrderRuleDayRepository(logger, psqldb)
+	customerappTicketRepo := customerapp_ticket.NewTicketStockRepository(logger, psqldb)
+	midtransRepo := midtrans.NewMidtransRepository(c.Midtrans.BaseURL, c.Midtrans.BasicAuthKey, logger, hc)
+	customerappOrderUseCase := customerapp_order.NewOrderUseCase(customerapp_order.OrderUseCaseProperty{
+		Logger:                       logger,
+		Timeout:                      c.Application.Timeout,
+		BaseURL:                      c.Application.TMOrder.BaseURL,
+		OrderExpireDuration:          c.Order.Expiration,
+		ServiceChargePercentage:      c.Order.ServiceChargePercentage,
+		TaxPercentage:                c.Order.TaxChargePercentage,
+		EventRepository:              customerappEventRepo,
+		ShowRepository:               customerappShowRepo,
+		TicketStockRepository:        customerappTicketRepo,
+		OrderRuleRangeDateRepository: customerappOrderRuleRangeDateRepo,
+		OrderRuleDay:                 customerappOrderRuleDayRepo,
+		OrderRepository:              customerappOrderRepo,
+		ItemRepository:               customerappOrderItemRepo,
+		Publisher:                    publisher,
+		MidtransRepository:           midtransRepo,
+		CloudTask:                    cloudTask,
+	})
+	customerapp_order.InitHTTPHandler(router, customerSessionMiddleware, validate, customerappOrderUseCase)
 
 	handler := middleware.SetChain(
 		router,

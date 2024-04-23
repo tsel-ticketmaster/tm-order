@@ -27,6 +27,9 @@ type Config struct {
 		TMUser      struct {
 			BaseURL string
 		}
+		TMOrder struct {
+			BaseURL string
+		}
 	}
 	Crypto struct {
 		Secret string
@@ -76,6 +79,15 @@ type Config struct {
 		ProjectID      string
 		ServiceAccount []byte
 	}
+	Order struct {
+		Expiration              time.Duration
+		TaxChargePercentage     float64
+		ServiceChargePercentage float64
+	}
+	Midtrans struct {
+		BaseURL      string
+		BasicAuthKey string
+	}
 }
 
 func (cfg *Config) application() {
@@ -90,6 +102,20 @@ func (cfg *Config) application() {
 	cfg.Application.Timezone, _ = time.LoadLocation(os.Getenv("APP_TIMEZONE"))
 
 	cfg.Application.TMUser.BaseURL = os.Getenv("APP_TMUSER_BASE_URL")
+	cfg.Application.TMOrder.BaseURL = os.Getenv("APP_TMORDER_BASE_URL")
+}
+
+func (cfg *Config) midtrans() {
+	cfg.Midtrans.BaseURL = os.Getenv("MIDTRANS_BASE_URL")
+	cfg.Midtrans.BasicAuthKey = os.Getenv("MIDTRANS_BASIC_AUTH_KEY")
+}
+
+func (cfg *Config) order() {
+	expiration, _ := strconv.Atoi(os.Getenv("ORDER_EXPIRATION"))
+	cfg.Order.Expiration = time.Duration(expiration) * time.Minute
+
+	cfg.Order.TaxChargePercentage, _ = strconv.ParseFloat(os.Getenv("ORDER_TAX_CHARGE"), 64)
+	cfg.Order.ServiceChargePercentage, _ = strconv.ParseFloat(os.Getenv("ORDER_SERVICE_CHARGE"), 64)
 }
 
 func (cfg *Config) crypto() {
@@ -158,6 +184,7 @@ func (cfg *Config) gcp() {
 func load() *Config {
 	cfg := new(Config)
 	cfg.application()
+	cfg.order()
 	cfg.crypto()
 	cfg.openTelemetry()
 	cfg.jwt()
@@ -166,6 +193,7 @@ func load() *Config {
 	cfg.redis()
 	cfg.kafka()
 	cfg.gcp()
+	cfg.midtrans()
 	return cfg
 }
 
