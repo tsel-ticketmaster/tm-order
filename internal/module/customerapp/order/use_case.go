@@ -2,6 +2,7 @@ package order
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -235,6 +236,56 @@ func (u *orderUseCase) OnExpireOrder(ctx context.Context, e ExpireOrderEvent) er
 	return nil
 }
 
+func (u *orderUseCase) checkRuleRangeDate(ctx context.Context, now time.Time, req PlaceOrderRequest, tx *sql.Tx) error {
+	rangeDate, err := u.orderRuleRangeDateRepository.FindByEventID(ctx, req.EventID, tx)
+	if err != nil {
+		return err
+	}
+
+	if now.Before(rangeDate.StartDate) {
+		return errors.New(http.StatusForbidden, status.FORBIDDEN, "ticket sales are not yet open")
+	}
+
+	if now.After(rangeDate.EndDate) {
+		return errors.New(http.StatusForbidden, status.FORBIDDEN, "ticket sales are already closed")
+	}
+
+	return nil
+}
+
+func (u *orderUseCase) checkRuleDay(ctx context.Context, now time.Time, req PlaceOrderRequest, tx *sql.Tx) error {
+	days, err := u.orderRuleDayRepository.FindManyByEventID(ctx, req.EventID, tx)
+	if err != nil {
+		return err
+	}
+	weekDayMatch := false
+	for _, weekday := range days {
+		if now.Weekday() == time.Weekday(weekday.Day) {
+			weekDayMatch = true
+			break
+		}
+	}
+
+	if !weekDayMatch {
+		return errors.New(http.StatusForbidden, status.FORBIDDEN, "ticket sales are temporary closed for today")
+	}
+
+	return nil
+}
+
+func (u *orderUseCase) checkRule(ctx context.Context, now time.Time, req PlaceOrderRequest, tx *sql.Tx) error {
+
+	if err := u.checkRuleRangeDate(ctx, now, req, tx); err != nil {
+		return err
+	}
+
+	if err := u.checkRuleDay(ctx, now, req, tx); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // PlaceOrder implements OrderUseCase.
 func (u *orderUseCase) PlaceOrder(ctx context.Context, req PlaceOrderRequest) (PlaceOrderResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, u.timeout)
@@ -251,6 +302,11 @@ func (u *orderUseCase) PlaceOrder(ctx context.Context, req PlaceOrderRequest) (P
 	}
 
 	now := time.Now()
+
+	if err := u.checkRule(ctx, now, req, tx); err != nil {
+		return PlaceOrderResponse{}, err
+	}
+
 	order := Order{
 		ID:                      util.GenerateTimestampWithPrefix("TO"),
 		PaymentMethod:           req.PaymentMethod,
