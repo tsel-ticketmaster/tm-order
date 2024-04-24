@@ -47,6 +47,7 @@ type orderUseCase struct {
 	publisher                    pubsub.Publisher
 	midtransRepository           midtrans.MidtransRepository
 	cloudTask                    gctasks.Client
+	acquiredTicketRepository     ticket.AcquiredTicketRepository
 }
 
 type OrderUseCaseProperty struct {
@@ -66,6 +67,7 @@ type OrderUseCaseProperty struct {
 	Publisher                    pubsub.Publisher
 	MidtransRepository           midtrans.MidtransRepository
 	CloudTask                    gctasks.Client
+	AcquiredTicketRepository     ticket.AcquiredTicketRepository
 }
 
 func NewOrderUseCase(props OrderUseCaseProperty) OrderUseCase {
@@ -86,6 +88,7 @@ func NewOrderUseCase(props OrderUseCaseProperty) OrderUseCase {
 		publisher:                    props.Publisher,
 		midtransRepository:           props.MidtransRepository,
 		cloudTask:                    props.CloudTask,
+		acquiredTicketRepository:     props.AcquiredTicketRepository,
 	}
 }
 
@@ -286,6 +289,18 @@ func (u *orderUseCase) checkRule(ctx context.Context, now time.Time, req PlaceOr
 	return nil
 }
 
+func (u *orderUseCase) checkIfAlreadyAcquired(ctx context.Context, customerID int64, req PlaceOrderRequest, tx *sql.Tx) error {
+	totalAqcuired, err := u.acquiredTicketRepository.CountByEventIDAndCustomerID(ctx, req.EventID, customerID, tx)
+	if err != nil {
+		return err
+	}
+	if totalAqcuired >= 1 {
+		return errors.New(http.StatusForbidden, status.FORBIDDEN, "you are already acquired a ticket for this event")
+	}
+
+	return nil
+}
+
 // PlaceOrder implements OrderUseCase.
 func (u *orderUseCase) PlaceOrder(ctx context.Context, req PlaceOrderRequest) (PlaceOrderResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, u.timeout)
@@ -304,6 +319,10 @@ func (u *orderUseCase) PlaceOrder(ctx context.Context, req PlaceOrderRequest) (P
 	now := time.Now()
 
 	if err := u.checkRule(ctx, now, req, tx); err != nil {
+		return PlaceOrderResponse{}, err
+	}
+
+	if err := u.checkIfAlreadyAcquired(ctx, acc.ID, req, tx); err != nil {
 		return PlaceOrderResponse{}, err
 	}
 

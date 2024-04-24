@@ -98,6 +98,7 @@ func main() {
 	customerappOrderRuleRangeDateRepo := customerapp_order.NewOrderRuleRangeDateRepository(logger, psqldb)
 	customerappOrderRuleDayRepo := customerapp_order.NewOrderRuleDayRepository(logger, psqldb)
 	customerappTicketRepo := customerapp_ticket.NewTicketStockRepository(logger, psqldb)
+	customerappAcquiredTicketRepo := customerapp_ticket.NewAcquiredTicketRepository(logger, psqldb)
 	midtransRepo := midtrans.NewMidtransRepository(c.Midtrans.BaseURL, c.Midtrans.BasicAuthKey, logger, hc)
 	customerappOrderUseCase := customerapp_order.NewOrderUseCase(customerapp_order.OrderUseCaseProperty{
 		Logger:                       logger,
@@ -116,6 +117,7 @@ func main() {
 		Publisher:                    publisher,
 		MidtransRepository:           midtransRepo,
 		CloudTask:                    cloudTask,
+		AcquiredTicketRepository:     customerappAcquiredTicketRepo,
 	})
 	customerapp_order.InitHTTPHandler(router, customerSessionMiddleware, validate, customerappOrderUseCase)
 
