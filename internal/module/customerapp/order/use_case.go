@@ -157,6 +157,12 @@ func (u *orderUseCase) OnExpireOrder(ctx context.Context, e ExpireOrderEvent) er
 		u.orderRepository.Rollback(ctx, tx)
 		return err
 	}
+
+	if order.Status == "PAID" {
+		u.orderRepository.Rollback(ctx, tx)
+		return nil
+	}
+
 	now := time.Now()
 	order.Status = "EXPIRED"
 	order.UpdatedAt = now
