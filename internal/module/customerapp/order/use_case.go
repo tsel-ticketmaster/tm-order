@@ -19,13 +19,14 @@ import (
 	"github.com/tsel-ticketmaster/tm-order/pkg/gctasks"
 	"github.com/tsel-ticketmaster/tm-order/pkg/pubsub"
 	"github.com/tsel-ticketmaster/tm-order/pkg/status"
+	"golang.org/x/sync/errgroup"
 )
 
 type OrderUseCase interface {
 	PlaceOrder(ctx context.Context, req PlaceOrderRequest) (PlaceOrderResponse, error)
 	OnPaymentNotification(ctx context.Context, e PaymentNotificationEvent) error
 	OnExpireOrder(ctx context.Context, e ExpireOrderEvent) error
-	GetManyOrder(ctx context.Context) (GetManyOrderResponse, error)
+	GetManyOrder(ctx context.Context, req GetManyOrderRequest) (GetManyOrderResponse, error)
 }
 
 type orderUseCase struct {
@@ -88,8 +89,63 @@ func NewOrderUseCase(props OrderUseCaseProperty) OrderUseCase {
 }
 
 // GetManyOrder implements OrderUseCase.
-func (u *orderUseCase) GetManyOrder(ctx context.Context) (GetManyOrderResponse, error) {
-	panic("unimplemented")
+func (u *orderUseCase) GetManyOrder(ctx context.Context, req GetManyOrderRequest) (GetManyOrderResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, u.timeout)
+	defer cancel()
+
+	acc, err := session.GetAccountFromCtx(ctx)
+	if err != nil {
+		return GetManyOrderResponse{}, err
+	}
+
+	offset := (req.Page - 1) * req.Size
+	limit := req.Size
+
+	var bunchOfOrders []Order
+	var total int64
+
+	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		count, err := u.orderRepository.Count(gctx, acc.ID, nil)
+		if err != nil {
+			return err
+		}
+		total = count
+
+		return nil
+	})
+	g.Go(func() error {
+		orders, err := u.orderRepository.FindMany(gctx, acc.ID, offset, limit, nil)
+		if err != nil {
+			return err
+		}
+		bunchOfOrders = orders
+
+		return nil
+	})
+
+	if err := g.Wait(); err != nil {
+		return GetManyOrderResponse{}, err
+	}
+
+	resp := GetManyOrderResponse{
+		Total:  total,
+		Orders: make([]PlaceOrderResponse, len(bunchOfOrders)),
+	}
+	for k, v := range bunchOfOrders {
+		items, err := u.itemRepository.FindManyByOrderID(ctx, v.ID, nil)
+		if err != nil {
+			return GetManyOrderResponse{}, err
+		}
+
+		v.Items = items
+
+		o := PlaceOrderResponse{}
+		o.PopulateFromEntity(v)
+		resp.Orders[k] = o
+	}
+
+	return resp, nil
 }
 
 // OnPaymentNotification implements OrderUseCase.

@@ -13,3 +13,8 @@ type PlaceOrderRequest struct {
 	TicketStockID string `json:"ticket_stock_id" validate:"required"`
 	Quantity      int64  `json:"quantity" validate:"required"`
 }
+
+type GetManyOrderRequest struct {
+	Page int64 `validate:"required"`
+	Size int64 `validate:"required"`
+}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/go-playground/validator/v10"
@@ -29,6 +30,7 @@ func InitHTTPHandler(router *mux.Router, customerSession *middleware.CustomerSes
 	}
 
 	router.HandleFunc("/tm-order/v1/customerapp/orders", publicMiddleware.SetRouteChain(handler.PlaceOrder, customerSession.Verify)).Methods(http.MethodPost)
+	router.HandleFunc("/tm-order/v1/customerapp/orders", publicMiddleware.SetRouteChain(handler.GetManyOrder, customerSession.Verify)).Methods(http.MethodGet)
 	router.HandleFunc("/tm-order/v1/customerapp/orders/on-expire", publicMiddleware.SetRouteChain(handler.OnExpireOrder)).Methods(http.MethodPost)
 	router.HandleFunc("/tm-order/v1/customerapp/orders/on-payment-notification", publicMiddleware.SetRouteChain(handler.OnPaymentNotification)).Methods(http.MethodPost)
 }
@@ -50,6 +52,43 @@ func (handler HTTPHandler) validate(ctx context.Context, payload interface{}) er
 	errorMessage := strings.Join(errMessages, ", ")
 
 	return fmt.Errorf(errorMessage)
+
+}
+
+func (handler HTTPHandler) GetManyOrder(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	qs := r.URL.Query()
+
+	req := GetManyOrderRequest{}
+	req.Page, _ = strconv.ParseInt(qs.Get("page"), 10, 64)
+	req.Size, _ = strconv.ParseInt(qs.Get("size"), 10, 64)
+
+	if err := handler.validate(ctx, req); err != nil {
+		response.JSON(w, http.StatusBadRequest, response.RESTEnvelope{
+			Status:  status.BAD_REQUEST,
+			Message: err.Error(),
+		})
+
+		return
+	}
+
+	resp, err := handler.OrderUseCase.GetManyOrder(ctx, req)
+	if err != nil {
+		ae := errors.Destruct(err)
+		response.JSON(w, ae.HTTPStatusCode, response.RESTEnvelope{
+			Status:  ae.Status,
+			Message: ae.Message,
+		})
+
+		return
+	}
+	response.JSON(w, http.StatusCreated, response.RESTEnvelope{
+		Status:  status.CREATED,
+		Message: "list of orders",
+		Data:    resp,
+		Meta:    nil,
+	})
 
 }
 

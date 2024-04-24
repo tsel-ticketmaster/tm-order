@@ -2,7 +2,10 @@ package order
 
 import "time"
 
-type GetManyOrderResponse []PlaceOrderResponse
+type GetManyOrderResponse struct {
+	Total  int64                `json:"total"`
+	Orders []PlaceOrderResponse `json:"orders"`
+}
 
 type GetByOrderIDResponse PlaceOrderResponse
 

@@ -18,7 +18,8 @@ type OrderRepository interface {
 
 	Save(ctx context.Context, o Order, tx *sql.Tx) error
 	FindByID(ctx context.Context, ID string, tx *sql.Tx) (Order, error)
-	FindMany(ctx context.Context, customerID string, tx *sql.Tx) ([]Order, error)
+	FindMany(ctx context.Context, customerID int64, offset, limit int64, tx *sql.Tx) ([]Order, error)
+	Count(ctx context.Context, customerID int64, tx *sql.Tx) (int64, error)
 	Update(ctx context.Context, ID string, o Order, tx *sql.Tx) error
 }
 
@@ -128,7 +129,7 @@ func (r *orderRepository) FindByID(ctx context.Context, ID string, tx *sql.Tx) (
 }
 
 // FindMany implements OrderRepository.
-func (r *orderRepository) FindMany(ctx context.Context, customerID string, tx *sql.Tx) ([]Order, error) {
+func (r *orderRepository) FindMany(ctx context.Context, customerID int64, offset int64, limit int64, tx *sql.Tx) ([]Order, error) {
 	var cmd sqlCommand = r.db
 
 	if tx != nil {
@@ -137,12 +138,15 @@ func (r *orderRepository) FindMany(ctx context.Context, customerID string, tx *s
 
 	query := `
 		SELECT 
-			id, payment_method, transaction_id, virtual_account status, customer_id, customer_name, customer_email,
+			id, payment_method, transaction_id, virtual_account, status, customer_id, customer_name, customer_email,
 			tax_percentage, service_charge_percentage, discount_percentage, service_charge,
 			tax, discount, subtotal, total_amount, created_at, updated_at
 		FROM ticket_order
 		WHERE
 			customer_id = $1
+		ORDER BY id DESC
+		OFFSET $2
+		LIMIT $3
 	`
 
 	stmt, err := cmd.PrepareContext(ctx, query)
@@ -152,7 +156,7 @@ func (r *orderRepository) FindMany(ctx context.Context, customerID string, tx *s
 	}
 	defer stmt.Close()
 
-	rows, err := stmt.QueryContext(ctx, customerID)
+	rows, err := stmt.QueryContext(ctx, customerID, offset, limit)
 	if err != nil {
 		r.logger.WithContext(ctx).WithError(err).Error()
 		return nil, errors.New(http.StatusInternalServerError, status.INTERNAL_SERVER_ERROR, "an error occurred while getting bunch of order's prorperties")
@@ -188,6 +192,47 @@ func (r *orderRepository) FindMany(ctx context.Context, customerID string, tx *s
 	}
 
 	return data, nil
+}
+
+// Count implements OrderRepository.
+func (r *orderRepository) Count(ctx context.Context, customerID int64, tx *sql.Tx) (int64, error) {
+	var cmd sqlCommand = r.db
+
+	if tx != nil {
+		cmd = tx
+	}
+
+	query := `
+		SELECT count(id)
+		FROM ticket_order
+		WHERE
+			customer_id = $1
+		LIMIT 1
+	`
+
+	stmt, err := cmd.PrepareContext(ctx, query)
+	if err != nil {
+		r.logger.WithContext(ctx).WithError(err).Error()
+		return 0, errors.New(http.StatusInternalServerError, status.INTERNAL_SERVER_ERROR, "an error occurred while getting order's prorperties")
+	}
+	defer stmt.Close()
+
+	row := stmt.QueryRowContext(ctx, customerID)
+
+	var count int64
+
+	err = row.Scan(
+		&count,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return 0, errors.New(http.StatusNotFound, status.NOT_FOUND, err.Error())
+		}
+		r.logger.WithContext(ctx).WithError(err).Error()
+		return 0, errors.New(http.StatusInternalServerError, status.INTERNAL_SERVER_ERROR, "an error occurred while getting order's prorperties")
+	}
+
+	return count, nil
 }
 
 // Save implements OrderRepository.
