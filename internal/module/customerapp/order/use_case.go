@@ -301,6 +301,19 @@ func (u *orderUseCase) checkIfAlreadyAcquired(ctx context.Context, customerID in
 	return nil
 }
 
+func (u *orderUseCase) checkIfActiveOrderExists(ctx context.Context, customerID int64, tx *sql.Tx) error {
+	count, err := u.orderRepository.CountActiveOrderByCustomerID(ctx, customerID, tx)
+	if err != nil {
+		return err
+	}
+
+	if count >= 1 {
+		return errors.New(http.StatusForbidden, status.FORBIDDEN, "you have an unpaid order")
+	}
+
+	return nil
+}
+
 // PlaceOrder implements OrderUseCase.
 func (u *orderUseCase) PlaceOrder(ctx context.Context, req PlaceOrderRequest) (PlaceOrderResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, u.timeout)
@@ -323,6 +336,10 @@ func (u *orderUseCase) PlaceOrder(ctx context.Context, req PlaceOrderRequest) (P
 	}
 
 	if err := u.checkIfAlreadyAcquired(ctx, acc.ID, req, tx); err != nil {
+		return PlaceOrderResponse{}, err
+	}
+
+	if err := u.checkIfActiveOrderExists(ctx, acc.ID, tx); err != nil {
 		return PlaceOrderResponse{}, err
 	}
 

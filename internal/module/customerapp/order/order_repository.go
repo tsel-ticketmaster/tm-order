@@ -21,6 +21,7 @@ type OrderRepository interface {
 	FindMany(ctx context.Context, customerID int64, offset, limit int64, tx *sql.Tx) ([]Order, error)
 	Count(ctx context.Context, customerID int64, tx *sql.Tx) (int64, error)
 	Update(ctx context.Context, ID string, o Order, tx *sql.Tx) error
+	CountActiveOrderByCustomerID(ctx context.Context, customerID int64, tx *sql.Tx) (int64, error)
 }
 
 type sqlCommand interface {
@@ -126,6 +127,47 @@ func (r *orderRepository) FindByID(ctx context.Context, ID string, tx *sql.Tx) (
 	}
 
 	return data, nil
+}
+
+// CountActiveOrderByCustomerID implements OrderRepository.
+func (r *orderRepository) CountActiveOrderByCustomerID(ctx context.Context, customerID int64, tx *sql.Tx) (int64, error) {
+	var cmd sqlCommand = r.db
+
+	if tx != nil {
+		cmd = tx
+	}
+
+	orderStatus := "WAITING_FOR_PAYMENT"
+
+	query := `
+		SELECT 
+			count(id)
+		FROM ticket_order
+		WHERE
+			customer_id = $1
+		AND
+			status = $2
+		LIMIT 1
+	`
+
+	stmt, err := cmd.PrepareContext(ctx, query)
+	if err != nil {
+		r.logger.WithContext(ctx).WithError(err).Error()
+		return 0, errors.New(http.StatusInternalServerError, status.INTERNAL_SERVER_ERROR, "an error occurred while counting order's prorperties")
+	}
+	defer stmt.Close()
+
+	row := stmt.QueryRowContext(ctx, customerID, orderStatus)
+
+	var count int64
+
+	err = row.Scan(&count)
+	if err != nil {
+		r.logger.WithContext(ctx).WithError(err).Error()
+		return 0, errors.New(http.StatusInternalServerError, status.INTERNAL_SERVER_ERROR, "an error occurred while counting order's prorperties")
+	}
+
+	return count, nil
 }
 
 // FindMany implements OrderRepository.
